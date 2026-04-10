@@ -4,20 +4,49 @@
     <title>X200 PRO DIAG</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { background: #121212; color: #00ff00; font-family: monospace; margin: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        #log { flex: 1; overflow-y: auto; padding: 10px; font-size: 12px; border-bottom: 1px solid #333; }
-        #data-block { background: #1a1a1a; padding: 10px; border-bottom: 2px solid #00ff00; display: none; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-        .stat { color: #fff; font-size: 14px; }
-        .val { color: #00ff00; font-weight: bold; }
-        .controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 10px; background: #000; }
-        button { background: #333; color: #fff; border: 1px solid #555; padding: 15px 5px; font-family: monospace; cursor: pointer; border-radius: 4px; }
-        button:active { background: #00ff00; color: #000; }
-        #term-panel { position: fixed; bottom: -50%; left: 0; width: 100%; height: 50%; background: #000; border-top: 2px solid #00ff00; transition: 0.3s; z-index: 100; }
-        #term-panel.open { bottom: 0; }
-        #term-input { width: 70%; padding: 15px; background: #111; border: 1px solid #333; color: #0ff; font-size: 16px; }
-        .term-btn { width: 25%; padding: 15px; background: #005500; color: #fff; }
+    body { 
+        background: #121212; 
+        color: #00ff00; 
+        margin: 0; 
+        display: flex; 
+        flex-direction: column; 
+        height: 100vh; 
+        font-family: monospace;
+    }
+    /* Fixed header for stats */
+    #data-block { 
+        height: 80px; 
+        background: #1a1a1a; 
+        border-bottom: 2px solid #00ff00; 
+        display: grid; 
+        grid-template-columns: 1fr 1fr; 
+        padding: 5px;
+    }
+    /* Scrollable log in the middle */
+    #log { 
+        flex-grow: 1; 
+        overflow-y: auto; 
+        padding: 10px; 
+        font-size: 13px; 
+    }
+    /* BIG CHUNKY BUTTONS at the bottom */
+    .controls { 
+        display: grid; 
+        grid-template-columns: 1fr 1fr 1fr; 
+        height: 80px; /* Forces buttons to be visible */
+        gap: 5px; 
+        padding: 5px; 
+        background: #000; 
+    }
+    button { 
+        background: #333; 
+        color: #fff; 
+        border: 2px solid #555; 
+        font-size: 16px; 
+        font-weight: bold;
+    }
     </style>
+        body>
 </head>
 <body>
 
