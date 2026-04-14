@@ -161,11 +161,10 @@
         }
 
         async function requestLevel03() {
-            await send("1003\r");
-            await new Promise(r => setTimeout(r, 500));
             if (!port) { log("ERROR: NO CONNECTION"); return; }
             isHandshaking = true;
             log("Requesting Level 03 Seed...");
+            await send("1003\r");
             await new Promise(r => setTimeout(r, 500));
             await send("1003\r");
             let res = await send("2703\r");
