@@ -92,50 +92,48 @@
         }
 
         async function connect() {
-    try {
-        port = await navigator.serial.requestPort();
-        await port.open({ baudRate: 38400 });
-        log("INITIALIZING...");
-        
-        await send("ATZ\r");
-        await send("ATSP6\r");
-        await send("ATSH7E0\r");
-
-        log("SWITCHING TO EXTENDED SESSION...");
-        let auth = await send("1003\r");
-        
-        if (auth.includes("5003")) {
-            log("SESSION OK. WAITING...");
-            // CRITICAL: Give the ECU 500ms to stabilize in Extended Mode
-            await new Promise(r => setTimeout(r, 500)); 
-            
-            startPinger(); // Start 3E00 to keep the session alive
-
-            let seedRes = await send("2701\r");
-            if (seedRes.includes("6701")) {
-                lastSeed = seedRes.split("6701")[1].substring(0,4); // Grab the 2-byte seed
-                log("SEED RECEIVED: " + lastSeed);
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 38400 });
+                log("INITIALIZING...");
                 
-                let key = swapBytes(lastSeed); // Flip AA55 to 55AA
-                log("SENDING KEY: " + key);
+                await send("ATZ\r");
+                await send("ATSP6\r");
+                await send("ATSH7E0\r");
+
+                log("SWITCHING TO EXTENDED SESSION...");
+                let auth = await send("1003\r");
                 
-                let unlockRes = await send("2702" + key + "\r");
-                if (unlockRes.includes("6702")) {
-                    log("LEVEL 01 UNLOCKED");
+                if (auth.includes("5003")) {
+                    log("SESSION OK. WAITING...");
+                    await new Promise(r => setTimeout(r, 500)); 
+                    
+                    startPinger(); 
+
+                    let seedRes = await send("2701\r");
+                    if (seedRes.includes("6701")) {
+                        lastSeed = seedRes.split("6701")[1].substring(0,4);
+                        log("SEED RECEIVED: " + lastSeed);
+                        
+                        let key = swapBytes(lastSeed);
+                        log("SENDING KEY: " + key);
+                        
+                        let unlockRes = await send("2702" + key + "\r");
+                        if (unlockRes.includes("6702")) {
+                            log("LEVEL 01 UNLOCKED");
+                        } else {
+                            log("UNLOCK FAILED: " + unlockRes);
+                        }
+                    } else {
+                        log("SEED ERROR: " + seedRes);
+                    }
                 } else {
-                    log("UNLOCK FAILED: " + unlockRes);
+                    log("SESSION REJECTED: " + auth);
                 }
+            } catch (e) { 
+                log("ERROR: " + e.message); 
             }
-             
-            } else {
-                log("SEED ERROR: " + seedRes); // This is where you'll see 7F2712 if session failed
-            }
-        } else {
-            log("SESSION REJECTED: " + auth);
         }
-    } catch (e) log("ERROR: " + e.message){
-        }
-     }
 
         async function checkFaults() {
             if (!port) return;
