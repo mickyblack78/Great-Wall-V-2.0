@@ -100,28 +100,25 @@
                 await send("ATZ\r");
                 await send("ATSP6\r");
                 await send("ATSH7E0\r");
-                    
-                    startPinger(); 
+                
+                startPinger(); 
 
-                    let seedRes = await send("2701\r");
-                    if (seedRes.includes("6701")) 
-                        lastSeed = seedRes.split("6701")[1].substring(0,4);
-                        log("SEED RECEIVED: " + lastSeed);
-                        
-                        let key = swapBytes(lastSeed);
-                        log("SENDING KEY: " + key);
-                        
-                        let unlockRes = await send("2702" + key + "\r");
-                        if (unlockRes.includes("6702")) {
-                            log("LEVEL 01 UNLOCKED");
-                        } else {
-                            log("UNLOCK FAILED: " + unlockRes);
-                        }
+                let seedRes = await send("2701\r");
+                if (seedRes.includes("6701")) {
+                    lastSeed = seedRes.split("6701")[1].substring(0,4);
+                    log("SEED RECEIVED: " + lastSeed);
+                    
+                    let key = swapBytes(lastSeed);
+                    log("SENDING KEY: " + key);
+                    
+                    let unlockRes = await send("2702" + key + "\r");
+                    if (unlockRes.includes("6702")) {
+                        log("LEVEL 01 UNLOCKED");
                     } else {
-                        log("SEED ERROR: " + seedRes);
+                        log("UNLOCK FAILED: " + unlockRes);
                     }
                 } else {
-                    log("SESSION REJECTED: " + auth);
+                    log("SEED ERROR: " + seedRes);
                 }
             } catch (e) { 
                 log("ERROR: " + e.message); 
@@ -158,18 +155,22 @@
 
         async function requestLevel03() {
             if (!port) { log("ERROR: NO CONNECTION"); return; }
-            isHandshaking = true;
-            log("Requesting Level 03 Seed...");
+            
+            isHandshaking = true; // Mute pinger first
+            log("SWITCHING TO EXTENDED...");
+            
             await send("1003\r");
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 500)); // Wait for ECU
+            
+            log("REQUESTING SEED...");
             let res = await send("2703\r");
             if (res.includes("6703")) {
-                lastSeed = res.split("6703")[1];
+                lastSeed = res.split("6703")[1].substring(0,4);
                 log("SEED RECEIVED: " + lastSeed);
                 await tryNextKey();
             } else {
                 log("FAILED SEED: " + res);
-                isHandshaking = false;
+                isHandshaking = false; 
             }
         }
 
