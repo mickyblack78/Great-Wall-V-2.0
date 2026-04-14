@@ -100,15 +100,11 @@
                 await send("ATZ\r");
                 await send("ATSP6\r");
                 await send("ATSH7E0\r");
-                
-                if (auth.includes("5003")) {
-                    log("SESSION OK. WAITING...");
-                    await new Promise(r => setTimeout(r, 500)); 
                     
                     startPinger(); 
 
                     let seedRes = await send("2701\r");
-                    if (seedRes.includes("6701")) {
+                    if (seedRes.includes("6701")) 
                         lastSeed = seedRes.split("6701")[1].substring(0,4);
                         log("SEED RECEIVED: " + lastSeed);
                         
