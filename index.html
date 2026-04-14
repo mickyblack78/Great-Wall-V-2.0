@@ -113,9 +113,20 @@
 
             let seedRes = await send("2701\r");
             if (seedRes.includes("6701")) {
-                lastSeed = seedRes.split("6701")[1].substring(0,8);
+                lastSeed = seedRes.split("6701")[1].substring(0,4); // Grab the 2-byte seed
                 log("SEED RECEIVED: " + lastSeed);
-                log("READY FOR KEY CALCULATION");
+                
+                let key = swapBytes(lastSeed); // Flip AA55 to 55AA
+                log("SENDING KEY: " + key);
+                
+                let unlockRes = await send("2702" + key + "\r");
+                if (unlockRes.includes("6702")) {
+                    log("LEVEL 01 UNLOCKED");
+                } else {
+                    log("UNLOCK FAILED: " + unlockRes);
+                }
+            }
+             
             } else {
                 log("SEED ERROR: " + seedRes); // This is where you'll see 7F2712 if session failed
             }
