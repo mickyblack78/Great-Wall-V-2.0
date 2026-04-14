@@ -100,9 +100,6 @@
                 await send("ATZ\r");
                 await send("ATSP6\r");
                 await send("ATSH7E0\r");
-
-                log("SWITCHING TO EXTENDED SESSION...");
-                let auth = await send("1003\r");
                 
                 if (auth.includes("5003")) {
                     log("SESSION OK. WAITING...");
@@ -164,6 +161,8 @@
         }
 
         async function requestLevel03() {
+            await send("1003\r");
+            await new Promise(r => setTimeout(r, 500));
             if (!port) { log("ERROR: NO CONNECTION"); return; }
             isHandshaking = true;
             log("Requesting Level 03 Seed...");
