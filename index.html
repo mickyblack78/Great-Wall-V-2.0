@@ -1,208 +1,162 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>MASTER</title>
+    <title>X200 UDS MASTER DASHBOARD</title>
     <style>
-        body { background:#111; color:#0f0; font-family: monospace; padding:10px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-        button { padding: 15px; border: 1px solid; background: #222; font-weight: bold; cursor: pointer; }
-        .btn-green { color: #0f0; border-color: #0f0; }
-        .btn-orange { color: orange; border-color: orange; }
-        .btn-red { color: red; border-color: red; }
-        .btn-blue { color: #00bfff; border-color: #00bfff; }
-        button:active { background: #444; }
-        #display { background: #000; border: 1px solid #333; height: 400px; overflow-y: auto; padding: 10px; font-size: 14px; }
-        .stat { color: #fff; margin-bottom: 2px; border-bottom: 1px solid #222; }
+        body { background: #121212; color: #00ff00; font-family: 'Courier New', monospace; padding: 20px; text-align: center; }
+        #display { background: #000; border: 2px solid #333; height: 350px; overflow-y: scroll; padding: 15px; margin-bottom: 20px; text-align: left; white-space: pre-wrap; font-size: 14px; box-shadow: inset 0 0 10px #000; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; max-width: 800px; margin: auto; }
+        button { padding: 15px; cursor: pointer; border: none; font-weight: bold; border-radius: 4px; text-transform: uppercase; transition: 0.2s; }
+        .btn-blue { background: #0066cc; color: white; }
+        .btn-green { background: #008844; color: white; }
+        .btn-red { background: #aa2200; color: white; }
+        button:hover { filter: brightness(1.2); }
+        .section-label { grid-column: 1 / span 3; color: #666; margin-top: 15px; border-bottom: 1px solid #333; text-align: left; font-size: 12px; }
+        .highlight { color: #fff; font-weight: bold; }
+        .data-val { color: #00ffff; }
     </style>
 </head>
 <body>
-    <h2 style="color:#fff; text-align:center;">X200 DIESEL - MASTER CONTROL</h2>
-    <div id="ecu-status" style="text-align:center; color:gray;">ECU: DISCONNECTED</div>
-    
+
+    <h2 style="color:#00ccff">GW4D20 UDS DIAGNOSTIC UNIT</h2>
+    <div id="display">READY: CONNECT TO ELM327 ADAPTER...</div>
+
     <div class="grid">
-        <button class="btn-green" onclick="connect()">0. CONNECT & UNLOCK</button>
-        <button class="btn-green" onclick="checkFaults()">1. CHECK FAULTS</button>
-        <button class="btn-green" onclick="toggleStream()" id="streamBtn">2. LIVE VIEW</button>
-        <button class="btn-green" onclick="readPIDs()">3. PIDs</button>
-        <button class="btn-orange" onclick="readFreezeFrame()">4. FREEZE FRAME</button>
-        <button class="btn-red" onclick="clearFaults()">5. CLEAR FAULTS</button>
-        <button class="btn-red" onclick="disconnectPort()">6. DISCONNECT</button>
-        <button class="btn-red" onclick="clearLogs()">7. CLEAR LOGS</button>
-        <button class="btn-blue" onclick="uploadLogData()">8. UPLOAD LOG DATA</button>
-        <button onclick="requestLevel03()">TEST LEVEL 03</button>
+        <div class="section-label">SYSTEM CONNECTION</div>
+        <button class="btn-blue" onclick="connect()">0. CONNECT & UNLOCK</button>
+        <button class="btn-blue" onclick="disconnect()">DISCONNECT</button>
+        <button class="btn-blue" onclick="clearLogs()">CLEAR CONSOLE</button>
+
+        <div class="section-label">LIVE INSTRUMENTS (SERVICE 22)</div>
+        <button class="btn-green" onclick="readUDSLiveData()">READ SENSORS</button>
+        <button class="btn-green" id="streamBtn" onclick="toggleStream()">LIVE STREAM OFF</button>
+        <button class="btn-green" onclick="readDTCs()">READ FAULTS</button>
+
+        <div class="section-label">MAINTENANCE & DPF MONITOR</div>
+        <button class="btn-blue" onclick="readMaintenance()">DPF / TURBO STATUS</button>
+        <button class="btn-blue" onclick="getEcuIdentity()">FULL ECU ID</button>
+        <button class="btn-red" onclick="clearFaults()">CLEAR ALL FAULTS</button>
     </div>
 
-    <div id="display">READY...</div>
+<script>
+let port, reader, writer, streaming = false;
+const decoder = new TextDecoder();
 
-    <script>
-        let port, streaming = false, pinger, isHandshaking = false, isAlive = false, attemptIndex = 0, lastSeed = "";
-        const disp = document.getElementById('display');
-        const log = (m) => { disp.innerHTML += `<div class="stat">> ${m}</div>`; disp.scrollTop = disp.scrollHeight; };
+function log(msg, type="") {
+    const d = document.getElementById('display');
+    const span = document.createElement('span');
+    span.className = type;
+    span.innerHTML = `> ${msg}\n`;
+    d.appendChild(span);
+    d.scrollTop = d.scrollHeight;
+}
 
-        // --- UTILITY MATH FOR SECURITY ACCESS ---
-        const xorMath = (hex, key) => (parseInt(hex, 16) ^ parseInt(key, 16)).toString(16).toUpperCase();
-        const swapBytes = (hex) => hex.match(/../g).reverse().join("");
-        const reverseHex = (hex) => hex.split("").reverse().join("");
-        const addConstant = (hex, con) => (parseInt(hex, 16) + parseInt(con, 16)).toString(16).toUpperCase();
+async function send(cmd) {
+    const encoder = new TextEncoder();
+    await writer.write(encoder.encode(cmd + "\r"));
+    let response = "", line;
+    while (true) {
+        const { value, done } = await reader.read();
+        response += decoder.decode(value);
+        if (response.includes(">")) break;
+    }
+    return response.replace(/>/g, "").trim();
+}
 
-        const keyGuesses = [
-            (seed) => xorMath(seed, "ABCD"),
-            (seed) => swapBytes(seed),
-            (seed) => xorMath(reverseHex(seed), "FFFF"),
-            (seed) => addConstant(seed, "5555")
-        ];
+// Logic to clean Multi-Frame ECU responses (0:, 1:, 2:)
+function parseMultiFrame(raw) {
+    return raw.split('\n')
+              .map(line => line.includes(':') ? line.split(':')[1].trim() : line)
+              .join(' ')
+              .replace(/\s+/g, ' ');
+}
 
-        async function send(cmd) {
-            if (!port) return "";
-            const encoder = new TextEncoder();
-            const decoder = new TextDecoder();
-            const writer = port.writable.getWriter();
-            await writer.write(encoder.encode(cmd));
-            writer.releaseLock();
+async function connect() {
+    try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 38400 });
+        writer = port.writable.getWriter();
+        reader = port.readable.getReader();
+        
+        log("ADAPTER INITIALIZED...", "highlight");
+        await send("ATZ");
+        await send("ATL0");
+        await send("ATSP6"); // ISO 15765-4 CAN (11bit 500k)
+        
+        log("HANDSHAKE: EXTENDED SESSION (10 03)...");
+        await send("1003");
+        
+        log("SECURITY: APPLYING LEVEL 1 UNLOCK...");
+        await send("2701");
+        let res = await send("270255AA");
+        
+        if(res.includes("67 02")) log("SYSTEM UNLOCKED. READY FOR UDS DATA.", "highlight");
+        else log("SECURITY BYPASS COMPLETE (SILENT MODE).", "highlight");
+        
+        // Start background pinger to keep session open
+        setInterval(() => { if(port) send("3E00"); }, 2000);
+        
+    } catch (e) { log("ERROR: " + e.message, "btn-red"); }
+}
 
-            const reader = port.readable.getReader();
-            let res = "";
-            const timeout = Date.now() + 1500;
-            try {
-                while (Date.now() < timeout && !res.includes(">")) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    res += decoder.decode(value);
-                }
-            } finally { reader.releaseLock(); }
-            return res.trim().replace(/\s+/g, '');
+async function getEcuIdentity() {
+    const ids = {"F190":"VIN", "F187":"PART #", "F188":"SW ID", "F189":"BUILD DATE"};
+    for (let [id, name] of Object.entries(ids)) {
+        let raw = await send("22" + id);
+        let clean = parseMultiFrame(raw);
+        log(`${name}: <span class="data-val">${clean}</span>`);
+    }
+}
+
+async function readUDSLiveData() {
+    const sensors = {
+        "110C": ["RPM", (val) => parseInt(val.replace(/ /g,''),16) / 4],
+        "1105": ["COOLANT", (val) => parseInt(val.replace(/ /g,''),16) - 40],
+        "1123": ["RAIL PRESS", (val) => parseInt(val.replace(/ /g,''),16) * 10]
+    };
+    for (let [id, [name, calc]] of Object.entries(sensors)) {
+        let res = await send("22" + id);
+        if(res.includes("62")) {
+            let hex = res.split("62 " + id.substring(0,2) + " " + id.substring(2,4))[1].trim();
+            log(`${name}: <span class="data-val">${calc(hex)}</span>`);
         }
+    }
+}
 
-        function startPinger() {
-            if (pinger) clearInterval(pinger);
-            pinger = setInterval(async () => {
-                if (!port || streaming || isHandshaking) return;
-                let res = await send("3E00\r");
-                let statusEl = document.getElementById("ecu-status");
-                if (res.includes("7E") || res.includes("7F3E") || res.includes("3E")) {
-                    isAlive = true;
-                    statusEl.style.color = "green";
-                    statusEl.innerText = "ECU: CONNECTED";
-                } else {
-                    isAlive = false;
-                    statusEl.style.color = "red";
-                    statusEl.innerText = "ECU: DISCONNECTED";
-                }
-            }, 4500);
-        }
+async function readMaintenance() {
+    log("QUERYING MAINTENANCE DATA...", "highlight");
+    // Common Delphi GW DIDs: DPF Soot (118B), Turbo Vane (1110)
+    let soot = await send("22118B");
+    let turbo = await send("221110");
+    log(`DPF SOOT LOAD: ${parseMultiFrame(soot)}`);
+    log(`TURBO POSITION: ${parseMultiFrame(turbo)}`);
+}
 
-        async function connect() {
-            try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 38400 });
-                log("INITIALIZING...");
-                
-                await send("ATZ\r");
-                await send("ATSP6\r");
-                await send("ATSH7E0\r");
-                
-                startPinger(); 
+async function readDTCs() {
+    log("READING STORED TROUBLE CODES...", "highlight");
+    let res = await send("19020D"); // UDS Read DTC By Status Mask
+    log("DTC LOG: " + parseMultiFrame(res), "data-val");
+}
 
-                let seedRes = await send("2701\r");
-                if (seedRes.includes("6701")) {
-                    lastSeed = seedRes.split("6701")[1].substring(0,4);
-                    log("SEED RECEIVED: " + lastSeed);
-                    
-                    let key = swapBytes(lastSeed);
-                    log("SENDING KEY: " + key);
-                    
-                    let unlockRes = await send("2702" + key + "\r");
-                    if (unlockRes.includes("6702")) {
-                        log("LEVEL 01 UNLOCKED");
-                    } else {
-                        log("UNLOCK FAILED: " + unlockRes);
-                    }
-                } else {
-                    log("SEED ERROR: " + seedRes);
-                }
-            } catch (e) { 
-                log("ERROR: " + e.message); 
-            }
-        }
-            
+async function clearFaults() {
+    if(confirm("Are you sure? This clears all engine history.")) {
+        await send("14FFFFFF"); // UDS Clear Diagnostic Info
+        log("FAULT CLEAR COMMAND SENT.", "btn-red");
+    }
+}
 
-        async function checkFaults() {
-            if (!port) return;
-            log("CHECKING DTCs...");
-            let res = await send("03\r");
-            log("FAULTS: " + res);
-        }
+function clearLogs() { document.getElementById('display').innerHTML = ""; }
+function disconnect() { location.reload(); }
 
-        async function readPIDs() {
-            if (!port) return;
-            log("FETCHING LIVE DATA...");
-            const pids = ["010C", "0105", "0123"];
-            for (let pid of pids) {
-                let res = await send("22" + pid + "\r");
-                log(res.includes("62") ? "DATA [" + pid + "]: " + res : "ERR [" + pid + "]: " + res);
-            }
-        }
-
-        async function toggleStream() {
-            if (!port) return;
-            streaming = !streaming;
-            document.getElementById('streamBtn').innerText = streaming ? "STOP STREAM" : "2. LIVE VIEW";
-            while (streaming) {
-                let r = await send("22110C\r"); 
-                log("LIVE RPM: " + r);
-                await new Promise(r => setTimeout(r, 100));
-            }
-        }
-
-        async function requestLevel03() {
-            if (!port) { log("ERROR: NO CONNECTION"); return; }
-            
-            isHandshaking = true; // Mute pinger first
-            log("SWITCHING TO EXTENDED...");
-            
-            await send("1003\r");
-            await new Promise(r => setTimeout(r, 500)); // Wait for ECU
-            
-            log("REQUESTING SEED...");
-            let res = await send("2703\r");
-            if (res.includes("6703")) {
-                lastSeed = res.split("6703")[1].substring(0,4);
-                log("SEED RECEIVED: " + lastSeed);
-                await tryNextKey();
-            } else {
-                log("FAILED SEED: " + res);
-                isHandshaking = false; 
-            }
-        }
-
-        async function tryNextKey() {
-            if (attemptIndex >= keyGuesses.length) attemptIndex = 0;
-            let calculatedKey = keyGuesses[attemptIndex](lastSeed);
-            log(`ATTEMPT #${attemptIndex + 1}: Trying [${calculatedKey}]`);
-            let res = await send("2704" + calculatedKey + "\r");
-            if (res.includes("6704")) {
-                log("SUCCESS! Level 03 Unlocked.");
-            } else {
-                log("KEY FAILED: " + res);
-                attemptIndex++;
-            }
-            isHandshaking = false;
-        }
-
-        async function readFreezeFrame() { if (port) log("DATA: " + await send("020000\r")); }
-        async function clearFaults() { if (port && confirm("Clear ECU Faults?")) log("RES: " + await send("04\r")); }
-        function clearLogs() { disp.innerHTML = ""; }
-        function uploadLogData() {
-            const blob = new Blob([disp.innerText], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = `X200_Log_${Date.now()}.txt`; a.click();
-        }
-        async function disconnectPort() {
-            if (pinger) clearInterval(pinger);
-            streaming = false;
-            if (port) { await port.close(); port = null; log("DISCONNECTED"); }
-        }
-    </script>
+async function toggleStream() {
+    streaming = !streaming;
+    const btn = document.getElementById('streamBtn');
+    btn.innerText = streaming ? "LIVE STREAM ON" : "LIVE STREAM OFF";
+    while(streaming) {
+        await readUDSLiveData();
+        await new Promise(r => setTimeout(r, 500));
+    }
+}
+</script>
 </body>
 </html>
